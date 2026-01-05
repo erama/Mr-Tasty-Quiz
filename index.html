@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Academia Mr Tasty - Evaluación Operativa</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fuente -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        /* Animación de carga */
+        .loader { border-top-color: #f97316; -webkit-animation: spinner 1.5s linear infinite; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+
+    <!-- FIREBASE CONFIGURATION & LOGIC -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, query, orderBy, limit, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+        // --- 1. CONFIGURACIÓN DE FIREBASE ---
+        // INSTRUCCIONES: Reemplaza este objeto con el que te da la consola de Firebase
+        const firebaseConfig = {
+             apiKey: "AIzaSyDLusg1p5yWxQ9Kad75RF7EZr9KWdZbXO0",
+             authDomain: "tu-proyecto.firebaseapp.com",
+             projectId: "tu-proyecto",
+             storageBucket: "tu-proyecto.appspot.com",
+             messagingSenderId: "123456789",
+             appId: "1:123456789:web:abcdef123456"
+        };
+
+        // Inicializar Firebase (Solo si la config no es dummy)
+        let db;
+        try {
+            if (firebaseConfig.apiKey !== "TU_API_KEY_AQUI") {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                window.db = db; // Exponer DB globalmente para React
+            } else {
+                console.warn("Firebase no configurado. El ranking no funcionará hasta que pongas tus llaves.");
+            }
+        } catch (e) {
+            console.error("Error inicializando Firebase", e);
+        }
+
+        // Exponer funciones de Firestore para usarlas en React
+        window.saveScoreToFirebase = async (name, score, total) => {
+            if (!window.db) return false;
+            try {
+                await addDoc(collection(window.db, "resultados"), {
+                    nombre: name,
+                    puntaje: score,
+                    total: total,
+                    porcentaje: Math.round((score/total)*100),
+                    fecha: serverTimestamp()
+                });
+                return true;
+            } catch (e) {
+                console.error("Error guardando: ", e);
+                return false;
+            }
+        };
+
+        window.getLeaderboardFromFirebase = async () => {
+            if (!window.db) return [];
+            try {
+                const q = query(collection(window.db, "resultados"), orderBy("puntaje", "desc"), orderBy("fecha", "desc"), limit(20));
+                const querySnapshot = await getDocs(q);
+                const results = [];
+                querySnapshot.forEach((doc) => {
+                    results.push({ id: doc.id, ...doc.data() });
+                });
+                return results;
+            } catch (e) {
+                console.error("Error leyendo ranking: ", e);
+                return [];
+            }
+        };
+    </script>
+
+    <!-- REACT APP -->
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- ICONOS ---
+        const Award = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>);
+        const CheckCircle = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>);
+        const XCircle = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>);
+        const RotateCcw = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>);
+        const ChevronRight = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="9 18 15 12 9 6"/></svg>);
+        const UserIcon = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>);
+        const Trophy = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>);
+
+        // --- PREGUNTAS (Sin cambios) ---
+        const questionsData = [
+            { id: 1, category: "Seguridad Alimentaria", question: "¿Cuál es la temperatura interna mínima segura que debe alcanzar una hamburguesa?", options: ["65°C durante 1 minuto", "71°C (160°F) durante al menos 15 segundos", "75°C solo en la superficie", "80°C para asegurar que esté seca"], correct: 1, explanation: "El manual especifica 71°C (160°F) para eliminar bacterias como E. coli que pueden estar en el centro de la carne picada." },
+            { id: 2, category: "Seguridad Alimentaria", question: "¿Por qué la carne picada es más riesgosa que un corte entero?", options: ["Porque se cocina más rápido", "Porque tiene más grasa", "Porque las bacterias de la superficie se mezclan y distribuyen por todo el interior al picarla", "No es más riesgosa, es igual"], correct: 2, explanation: "Al picar la carne, las bacterias superficiales pasan al interior, protegiéndose del calor si no se cocina bien el centro." },
+            { id: 3, category: "Seguridad Alimentaria", question: "¿Cuál es el tiempo mínimo recomendado para un lavado de manos efectivo?", options: ["10 segundos con agua fría", "20 segundos con agua tibia y jabón", "5 segundos con alcohol en gel", "30 segundos solo con agua"], correct: 1, explanation: "El protocolo exige frotar las manos con jabón durante al menos 20 segundos antes de enjuagar." },
+            { id: 4, category: "Seguridad Alimentaria", question: "¿A qué temperatura debe mantenerse el freezer para conservar los medallones?", options: ["-10°C", "0°C", "-18°C o menos", "-5°C"], correct: 2, explanation: "La temperatura estándar de seguridad para congelados es -18°C para detener el crecimiento bacteriano." },
+            { id: 5, category: "Seguridad Alimentaria", question: "¿Qué significa el sistema FIFO?", options: ["Final In, First Out (Último en entrar, primero en salir)", "First In, First Out (Primero en entrar, primero en salir)", "Fast In, Fast Out (Rápido en entrar, rápido en salir)", "Fresh In, Fresh Out (Fresco en entrar, fresco en salir)"], correct: 1, explanation: "FIFO asegura la rotación: lo que tiene fecha de vencimiento más próxima (o llegó primero) se usa primero." },
+            { id: 6, category: "Operaciones", question: "¿Cuál es la temperatura estándar del Mantenedor de Carnes Cocidas?", options: ["60°C - 70°C", "78°C - 82°C", "90°C - 100°C", "40°C - 50°C"], correct: 1, explanation: "El rango 78°C-82°C mantiene la temperatura segura sin seguir cocinando ni secando el producto en exceso." },
+            { id: 7, category: "Operaciones", question: "¿Cuándo se debe realizar el cambio total del aceite de la freidora según el cronograma?", options: ["Los Lunes", "Los Miércoles", "Los Viernes", "Cuando se vea oscuro solamente"], correct: 2, explanation: "El manual indica: Filtrado Lunes y Miércoles, Cambio los Viernes." },
+            { id: 8, category: "Operaciones", question: "¿Cuál es el tiempo de retención máximo sugerido para un medallón de carne regular en el mantenedor?", options: ["30 minutos", "15 minutos", "1 hora", "5 minutos"], correct: 1, explanation: "La carne regular tiene un tiempo de retención de aprox. 15 minutos. Premium o pollo toleran 20-30 min." },
+            { id: 9, category: "Operaciones", question: "¿Cuál es el paso correcto para limpiar la plancha al cierre?", options: ["Esperar a que esté totalmente fría y usar hielo", "Limpiar aún tibia, se puede usar agua/hielo para soltar residuos y espátula", "Usar desengrasante fuerte todos los días", "Dejarla sucia para curarla al día siguiente"], correct: 1, explanation: "Se limpia tibia. El choque térmico con agua/hielo ayuda. No usar desengrasantes fuertes a diario para no perder el curado." },
+            { id: 10, category: "Servicio al Cliente", question: "¿Cuál es el tiempo objetivo máximo desde que el cliente pide hasta que recibe su pedido?", options: ["3 minutos", "5 minutos", "8 minutos", "10 minutos"], correct: 1, explanation: "La meta de Mr Tasty es no superar los 5 minutos en el circuito de pedido a entrega." },
+            { id: 11, category: "Reclamos", question: "¿Cuál es la solución protocolar si un cliente recibe carne cruda o quemada?", options: ["Solo pedir disculpas", "Ofrecer un descuento del 10%", "Disculpa + Reemplazo gratis en local o crédito para próxima compra", "Decirle que es el punto de la casa"], correct: 2, explanation: "Es un error grave. Requiere disculpa genuina y compensación inmediata (reemplazo) o crédito futuro." },
+            { id: 12, category: "Reclamos", question: "¿Cuál es el tiempo máximo ideal para responder una queja o reseña online?", options: ["24 horas", "48 horas", "1 semana", "Cuando tenga tiempo el gerente"], correct: 0, explanation: "El principio general es responder en menos de 24 horas para contener la insatisfacción." },
+            { id: 13, category: "Roles", question: "¿Quién es el responsable de realizar el 'Último Chequeo' del pedido antes de entregarlo?", options: ["El Cocinero", "El Cajero", "El Armador", "El Despachante de mostrador"], correct: 3, explanation: "El Despachante revisa la comanda, el contenido de la bolsa, agrega la bebida y llama al cliente." },
+            { id: 14, category: "Operaciones", question: "¿Qué se debe hacer primero en el protocolo de apertura?", options: ["Preparar los vegetales", "Encender freidoras y planchas, y verificar estado del local", "Abrir la caja registradora", "Poner música"], correct: 1, explanation: "El primer paso es el ingreso y encendido de equipos para que lleguen a temperatura operativa." }
+        ];
+
+        function MrTastyTrainingApp() {
+            const [gameState, setGameState] = useState('welcome'); // welcome, quiz, results, leaderboard
+            const [currentQIndex, setCurrentQIndex] = useState(0);
+            const [score, setScore] = useState(0);
+            const [selectedOption, setSelectedOption] = useState(null);
+            const [isAnswerChecked, setIsAnswerChecked] = useState(false);
+            const [shuffledQuestions, setShuffledQuestions] = useState([]);
+            
+            // Nuevo Estado para persistencia
+            const [userName, setUserName] = useState('');
+            const [leaderboard, setLeaderboard] = useState([]);
+            const [isSaving, setIsSaving] = useState(false);
+            const [isSaved, setIsSaved] = useState(false);
+            const [configMissing, setConfigMissing] = useState(false);
+
+            useEffect(() => {
+                // Verificar si falta configurar Firebase
+                if (typeof window.db === 'undefined') {
+                    setConfigMissing(true);
+                }
+            }, []);
+
+            const startGame = () => {
+                if(userName.trim().length < 2) {
+                    alert("Por favor ingresa tu nombre para continuar");
+                    return;
+                }
+                const shuffled = [...questionsData].sort(() => 0.5 - Math.random());
+                setShuffledQuestions(shuffled);
+                setScore(0);
+                setCurrentQIndex(0);
+                setSelectedOption(null);
+                setIsAnswerChecked(false);
+                setIsSaved(false);
+                setGameState('quiz');
+            };
+
+            const handleOptionSelect = (index) => {
+                if (!isAnswerChecked) setSelectedOption(index);
+            };
+
+            const checkAnswer = () => {
+                setIsAnswerChecked(true);
+                if (selectedOption === shuffledQuestions[currentQIndex].correct) {
+                    setScore(score + 1);
+                }
+            };
+
+            const nextQuestion = () => {
+                if (currentQIndex + 1 < shuffledQuestions.length) {
+                    setCurrentQIndex(currentQIndex + 1);
+                    setSelectedOption(null);
+                    setIsAnswerChecked(false);
+                } else {
+                    setGameState('results');
+                }
+            };
+
+            const saveResult = async () => {
+                if (isSaved) return;
+                setIsSaving(true);
+                const success = await window.saveScoreToFirebase(userName, score, shuffledQuestions.length);
+                setIsSaving(false);
+                if(success) {
+                    setIsSaved(true);
+                    // Cargar el leaderboard después de guardar
+                    viewLeaderboard();
+                } else {
+                    alert("Error al guardar. Verifica la conexión o la configuración.");
+                }
+            };
+
+            const viewLeaderboard = async () => {
+                setGameState('leaderboard');
+                const data = await window.getLeaderboardFromFirebase();
+                setLeaderboard(data);
+            };
+
+            // --- VISTA: BIENVENIDA ---
+            if (gameState === 'welcome') {
+                return (
+                    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+                        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full text-center border-t-8 border-orange-500">
+                            
+                            {configMissing && (
+                                <div className="mb-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-2 text-xs text-left">
+                                    <p className="font-bold">Modo Demo</p>
+                                    <p>Para guardar resultados, el administrador debe editar el archivo index.html y agregar las claves de Firebase.</p>
+                                </div>
+                            )}
+
+                            <div className="flex justify-center mb-6">
+                                <div className="bg-orange-100 p-4 rounded-full">
+                                    <Award className="w-16 h-16 text-orange-600" />
+                                </div>
+                            </div>
+                            <h1 className="text-3xl font-bold text-gray-900 mb-2">Academia Mr Tasty</h1>
+                            <p className="text-gray-600 mb-6">Ingresa tu nombre para comenzar la evaluación.</p>
+                            
+                            <div className="mb-6">
+                                <label className="block text-left text-gray-700 text-sm font-bold mb-2" htmlFor="username">
+                                    Nombre y Apellido
+                                </label>
+                                <div className="flex items-center border rounded-lg px-3 py-2 border-gray-300 focus-within:border-orange-500 bg-gray-50">
+                                    <UserIcon className="text-gray-400 w-5 h-5 mr-2"/>
+                                    <input 
+                                        id="username"
+                                        type="text" 
+                                        className="w-full bg-transparent outline-none text-gray-700"
+                                        placeholder="Ej: Juan Pérez"
+                                        value={userName}
+                                        onChange={(e) => setUserName(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={startGame}
+                                className={`w-full text-white font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center justify-center ${userName.trim().length < 2 ? 'bg-gray-400 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700'}`}
+                                disabled={userName.trim().length < 2}
+                            >
+                                Comenzar Examen
+                                <ChevronRight className="ml-2 w-5 h-5" />
+                            </button>
+                            
+                            {!configMissing && (
+                                <button onClick={viewLeaderboard} className="mt-4 text-orange-600 text-sm font-semibold hover:underline flex items-center justify-center w-full">
+                                    <Trophy className="w-4 h-4 mr-1"/> Ver Ranking Global
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- VISTA: RESULTADOS ---
+            if (gameState === 'results') {
+                const percentage = Math.round((score / shuffledQuestions.length) * 100);
+                let message = "";
+                let colorClass = "";
+
+                if (percentage >= 90) { message = "¡Excelente! Nivel Gerencial."; colorClass = "text-green-600"; }
+                else if (percentage >= 70) { message = "¡Aprobado! Buenos conocimientos."; colorClass = "text-blue-600"; }
+                else { message = "Necesitas repasar el manual."; colorClass = "text-orange-600"; }
+
+                return (
+                    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+                        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full text-center">
+                            <h2 className="text-2xl font-bold mb-4">Resultados de {userName}</h2>
+                            
+                            <div className="mb-6 flex justify-center">
+                                <div className="relative w-32 h-32 flex items-center justify-center rounded-full border-4 border-gray-200">
+                                    <span className={`text-4xl font-bold ${colorClass}`}>{percentage}%</span>
+                                </div>
+                            </div>
+
+                            <p className="text-lg mb-2 font-semibold text-gray-800">
+                                Aciertos: {score} de {shuffledQuestions.length}
+                            </p>
+                            <p className={`mb-8 ${colorClass} font-medium`}>{message}</p>
+
+                            <div className="space-y-3">
+                                {!isSaved && !configMissing && (
+                                    <button 
+                                        onClick={saveResult}
+                                        disabled={isSaving}
+                                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center justify-center"
+                                    >
+                                        {isSaving ? (
+                                            <div className="loader ease-linear rounded-full border-2 border-t-2 border-gray-200 h-5 w-5 mr-2"></div>
+                                        ) : (
+                                            <Trophy className="mr-2 w-5 h-5" />
+                                        )}
+                                        {isSaving ? "Guardando..." : "Guardar mi Puntaje"}
+                                    </button>
+                                )}
+                                
+                                {configMissing && (
+                                     <p className="text-xs text-red-500">No se puede guardar: Falta configurar Firebase.</p>
+                                )}
+
+                                <button 
+                                    onClick={() => setGameState('welcome')}
+                                    className="w-full bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center justify-center"
+                                >
+                                    <RotateCcw className="mr-2 w-5 h-5" />
+                                    Volver al Inicio
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- VISTA: LEADERBOARD (RANKING) ---
+            if (gameState === 'leaderboard') {
+                return (
+                    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-start pt-10 p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+                                    <Trophy className="w-6 h-6 text-yellow-500 mr-2" />
+                                    Tabla de Posiciones
+                                </h2>
+                                <button onClick={() => setGameState('welcome')} className="text-sm text-gray-500 hover:text-gray-800">
+                                    Cerrar
+                                </button>
+                            </div>
+
+                            <div className="overflow-hidden rounded-lg border border-gray-200">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pos</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Puntaje</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {leaderboard.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="3" className="px-4 py-8 text-center text-gray-500 text-sm">
+                                                    Cargando resultados o tabla vacía...
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            leaderboard.map((entry, idx) => (
+                                                <tr key={idx} className={idx < 3 ? 'bg-yellow-50' : ''}>
+                                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 font-bold">
+                                                        #{idx + 1}
+                                                    </td>
+                                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                        {entry.nombre}
+                                                    </td>
+                                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 text-right">
+                                                        <span className="font-bold text-gray-800">{entry.porcentaje}%</span>
+                                                        <span className="text-xs ml-1">({entry.puntaje}/{entry.total})</span>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <button 
+                                onClick={() => setGameState('welcome')}
+                                className="mt-6 w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded transition duration-200"
+                            >
+                                Volver
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- VISTA: PREGUNTA (QUIZ) ---
+            const currentQ = shuffledQuestions[currentQIndex];
+
+            return (
+                <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-start pt-10 p-4">
+                    <div className="w-full max-w-lg mb-6 flex justify-between items-center text-sm font-semibold text-gray-500">
+                        <span>Pregunta {currentQIndex + 1} de {shuffledQuestions.length}</span>
+                        <div className="flex flex-col items-end">
+                            <span className="text-gray-900 font-bold">{userName}</span>
+                            <span className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-xs mt-1">
+                                {currentQ.category}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg">
+                        <h3 className="text-xl font-bold text-gray-900 mb-6 leading-relaxed">
+                            {currentQ.question}
+                        </h3>
+
+                        <div className="space-y-3">
+                            {currentQ.options.map((option, idx) => {
+                                let btnClass = "w-full text-left p-4 rounded-lg border-2 transition duration-200 flex items-center justify-between ";
+                                
+                                if (isAnswerChecked) {
+                                    if (idx === currentQ.correct) {
+                                        btnClass += "border-green-500 bg-green-50 text-green-900";
+                                    } else if (idx === selectedOption) {
+                                        btnClass += "border-red-500 bg-red-50 text-red-900";
+                                    } else {
+                                        btnClass += "border-gray-200 text-gray-400 opacity-60";
+                                    }
+                                } else {
+                                    if (selectedOption === idx) {
+                                        btnClass += "border-orange-500 bg-orange-50 text-orange-900 font-semibold shadow-sm";
+                                    } else {
+                                        btnClass += "border-gray-200 hover:border-orange-300 hover:bg-gray-50";
+                                    }
+                                }
+
+                                return (
+                                    <button 
+                                        key={idx}
+                                        onClick={() => handleOptionSelect(idx)}
+                                        disabled={isAnswerChecked}
+                                        className={btnClass}
+                                    >
+                                        <span>{option}</span>
+                                        {isAnswerChecked && idx === currentQ.correct && <CheckCircle className="text-green-600 w-5 h-5" />}
+                                        {isAnswerChecked && idx === selectedOption && idx !== currentQ.correct && <XCircle className="text-red-600 w-5 h-5" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {isAnswerChecked && (
+                            <div className={`mt-6 p-4 rounded-lg border-l-4 ${selectedOption === currentQ.correct ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
+                                <h4 className="font-bold text-sm mb-1 flex items-center">
+                                    {selectedOption === currentQ.correct ? <span className="text-green-700">¡Correcto!</span> : <span className="text-red-700">Incorrecto</span>}
+                                </h4>
+                                <p className="text-sm text-gray-700 mt-1"><span className="font-semibold">Explicación:</span> {currentQ.explanation}</p>
+                            </div>
+                        )}
+
+                        <div className="mt-8">
+                            {!isAnswerChecked ? (
+                                <button onClick={checkAnswer} disabled={selectedOption === null} className={`w-full py-3 rounded-lg font-bold text-white transition duration-200 ${selectedOption === null ? 'bg-gray-300 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700 shadow-md'}`}>Confirmar Respuesta</button>
+                            ) : (
+                                <button onClick={nextQuestion} className="w-full bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 rounded-lg shadow-md transition duration-200 flex items-center justify-center">{currentQIndex + 1 < shuffledQuestions.length ? 'Siguiente Pregunta' : 'Ver Resultados'} <ChevronRight className="ml-2 w-5 h-5" /></button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<MrTastyTrainingApp />);
+    </script>
+</body>
+</html>
+
+
